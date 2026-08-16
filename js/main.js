@@ -7,6 +7,7 @@ import { Track, LAP_COUNT } from "./track.js";
 import { AIController, AI_TRAITS } from "./ai.js";
 import { ItemSystem } from "./items.js";
 import { HUD } from "./hud.js";
+import { setupRenderer, createSunsetEnvironment, createComposer } from "./gfx.js";
 
 const canvas = document.getElementById("game-canvas");
 const hudCanvas = document.getElementById("hud-canvas");
@@ -18,15 +19,11 @@ const standingsEl = document.getElementById("standings");
 const finishPlaceEl = document.getElementById("finish-place");
 const muteBtn = document.getElementById("mute-btn");
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-renderer.setClearColor(0xff8a5c, 1);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.12;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
+const renderer = setupRenderer(canvas);
 
 const scene = new THREE.Scene();
+scene.environment = createSunsetEnvironment(renderer);
+scene.environmentIntensity = 0.82;
 const camera = new THREE.PerspectiveCamera(58, 1, 0.15, 700);
 const chase = new ChaseCamera(camera);
 const input = new Input();
@@ -40,6 +37,7 @@ const player = karts[0];
 const ais = karts.slice(1).map((k, i) => new AIController(k, AI_TRAITS[i]));
 const items = new ItemSystem(scene, track);
 const hud = new HUD(hudCanvas, track);
+const fx = createComposer(renderer, scene, camera);
 
 const sparks = makeSparks(scene);
 
@@ -62,6 +60,8 @@ function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
   renderer.setPixelRatio(dpr);
   renderer.setSize(w, h, false);
+  fx.composer.setSize(w, h);
+  fx.cine.uniforms.uRes.value.set(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   hud.resize();
@@ -202,6 +202,11 @@ function showFinish() {
   audio.fanfare();
 }
 
+function renderFrame() {
+  fx.cine.uniforms.uTime.value = clock;
+  fx.composer.render();
+}
+
 function formatTime(sec) {
   const m = Math.floor(sec / 60);
   const s = sec - m * 60;
@@ -219,7 +224,7 @@ function tick(now) {
 
   if (mode === "title") {
     chase.updateCinematic(dt, clock, track.center);
-    renderer.render(scene, camera);
+    renderFrame();
     hud.draw({ mode, player, karts, raceTime: 0, wrongWay: false });
     audio.updateEngine(0, 0, false, false);
     return;
@@ -243,7 +248,7 @@ function tick(now) {
       simulateKart(ai.kart, idle, track, dt, false);
     }
     chase.update(dt, player);
-    renderer.render(scene, camera);
+    renderFrame();
     hud.draw({ mode, player, karts, raceTime: 0, wrongWay: false });
     if (countT >= 3.35) {
       countEl.classList.add("hidden");
@@ -305,7 +310,7 @@ function tick(now) {
     updatePlaces();
     updateSparks(sparks, player, dt);
     chase.update(dt, player);
-    renderer.render(scene, camera);
+    renderFrame();
 
     const deltaP = player.progress - lastProgress;
     let wrapped = deltaP;
@@ -329,7 +334,7 @@ function tick(now) {
 
   if (mode === "finish") {
     chase.update(dt, player);
-    renderer.render(scene, camera);
+    renderFrame();
     hud.draw({ mode: "race", player, karts, raceTime, wrongWay: false });
     audio.updateEngine(player.speed, 0, false, true);
   }
