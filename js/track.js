@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { asphaltMap, sandMap, grassMap, rockMap } from "./gfx.js";
 
 export const TRACK_WIDTH = 15.4;
 export const HALF_WIDTH = TRACK_WIDTH * 0.5;
@@ -184,7 +185,7 @@ export class Track {
   }
 
   #sky(scene) {
-    const geo = new THREE.SphereGeometry(520, 24, 16);
+    const geo = new THREE.SphereGeometry(520, 48, 32);
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       uniforms: {},
@@ -198,14 +199,24 @@ export class Track {
       fragmentShader: `
         varying vec3 vP;
         void main() {
-          float h = normalize(vP).y;
-          vec3 zenith = vec3(0.18, 0.12, 0.42);
-          vec3 mid = vec3(0.95, 0.38, 0.28);
-          vec3 hor = vec3(1.0, 0.72, 0.38);
-          vec3 col = mix(hor, mid, smoothstep(-0.08, 0.18, h));
-          col = mix(col, zenith, smoothstep(0.18, 0.72, h));
-          float sun = pow(max(0.0, dot(normalize(vP), normalize(vec3(-0.55, 0.22, 0.4)))), 48.0);
-          col += vec3(1.0, 0.75, 0.35) * sun * 1.2;
+          vec3 n = normalize(vP);
+          float h = n.y;
+          vec3 zenith = vec3(0.10, 0.07, 0.34);
+          vec3 upper = vec3(0.38, 0.12, 0.40);
+          vec3 mid = vec3(0.98, 0.32, 0.26);
+          vec3 hor = vec3(1.15, 0.68, 0.32);
+          vec3 below = vec3(0.82, 0.36, 0.20);
+          vec3 col = mix(below, hor, smoothstep(-0.24, -0.02, h));
+          col = mix(col, mid, smoothstep(-0.02, 0.16, h));
+          col = mix(col, upper, smoothstep(0.16, 0.42, h));
+          col = mix(col, zenith, smoothstep(0.38, 0.84, h));
+          vec3 sunDir = normalize(vec3(-0.55, 0.22, 0.40));
+          float sunDot = max(0.0, dot(n, sunDir));
+          float sun = pow(sunDot, 64.0);
+          float glow = pow(sunDot, 8.0) * 0.35;
+          col += vec3(1.0, 0.75, 0.35) * (sun * 1.2 + glow);
+          float haze = exp(-abs(h) * 6.5) * 0.55;
+          col += vec3(1.05, 0.55, 0.28) * haze;
           gl_FragColor = vec4(col, 1.0);
         }
       `,
@@ -215,57 +226,83 @@ export class Track {
   }
 
   #lights(scene) {
-    const hemi = new THREE.HemisphereLight(0xffb07a, 0x3a6a4a, 0.85);
+    const hemi = new THREE.HemisphereLight(0xffc090, 0x2a4a3a, 0.95);
     scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffd4a0, 1.55);
-    sun.position.set(-80, 70, 40);
+    const sun = new THREE.DirectionalLight(0xffe0b0, 2.05);
+    sun.position.set(-90, 78, 48);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.near = 10;
     sun.shadow.camera.far = 280;
-    sun.shadow.camera.left = -140;
-    sun.shadow.camera.right = 140;
-    sun.shadow.camera.top = 140;
-    sun.shadow.camera.bottom = -140;
-    sun.shadow.bias = -0.0007;
+    sun.shadow.camera.left = -160;
+    sun.shadow.camera.right = 160;
+    sun.shadow.camera.top = 160;
+    sun.shadow.camera.bottom = -160;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.04;
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0x8899ff, 0.25);
+    const fill = new THREE.DirectionalLight(0x8899ff, 0.38);
     fill.position.set(40, 20, -60);
     scene.add(fill);
+    const warm = new THREE.PointLight(0xff9a4a, 18, 220);
+    warm.position.set(-70, 28, 40);
+    scene.add(warm);
   }
 
   #water(scene) {
-    const geo = new THREE.PlaneGeometry(900, 900, 48, 48);
+    const geo = new THREE.PlaneGeometry(900, 900, 80, 80);
     geo.rotateX(-Math.PI / 2);
     const mat = new THREE.ShaderMaterial({
       transparent: true,
       uniforms: {
         uTime: { value: 0 },
+        cameraPosition: { value: new THREE.Vector3() },
       },
       vertexShader: `
         uniform float uTime;
         varying vec2 vUv;
-        varying float vW;
+        varying vec3 vWorld;
+        varying vec3 vNrm;
         void main() {
           vUv = uv;
           vec3 p = position;
-          float w = sin(p.x * 0.045 + uTime * 1.1) * 0.45 + cos(p.z * 0.038 + uTime * 0.8) * 0.35;
-          p.y += w;
-          vW = w;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+          float t = uTime;
+          float w1 = sin(p.x * 0.042 + t * 1.15) * 0.42;
+          float w2 = cos(p.z * 0.036 + t * 0.82) * 0.32;
+          float w3 = sin((p.x + p.z) * 0.055 + t * 1.6) * 0.18;
+          float w4 = cos(p.x * 0.09 - p.z * 0.07 + t * 2.1) * 0.08;
+          p.y += w1 + w2 + w3 + w4;
+          float dx = cos(p.x * 0.042 + t * 1.15) * 0.01764 + cos((p.x + p.z) * 0.055 + t * 1.6) * 0.0099 - sin(p.x * 0.09 - p.z * 0.07 + t * 2.1) * 0.0072;
+          float dz = -sin(p.z * 0.036 + t * 0.82) * 0.01152 + cos((p.x + p.z) * 0.055 + t * 1.6) * 0.0099 + sin(p.x * 0.09 - p.z * 0.07 + t * 2.1) * 0.0056;
+          vNrm = normalize(vec3(-dx, 1.0, -dz));
+          vec4 wp = modelMatrix * vec4(p, 1.0);
+          vWorld = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
         }
       `,
       fragmentShader: `
         uniform float uTime;
         varying vec2 vUv;
-        varying float vW;
+        varying vec3 vWorld;
+        varying vec3 vNrm;
         void main() {
-          vec3 deep = vec3(0.05, 0.22, 0.38);
-          vec3 warm = vec3(0.95, 0.45, 0.28);
-          vec3 col = mix(deep, warm, 0.28 + vW * 0.15);
-          float spark = pow(max(0.0, sin(vUv.x * 80.0 + uTime) * sin(vUv.y * 70.0 - uTime * 0.7)), 8.0);
-          col += vec3(1.0, 0.85, 0.6) * spark * 0.15;
-          gl_FragColor = vec4(col, 0.92);
+          vec3 n = normalize(vNrm);
+          vec3 viewDir = normalize(cameraPosition - vWorld);
+          float fres = pow(1.0 - max(0.0, dot(n, viewDir)), 3.2);
+          vec3 deep = vec3(0.04, 0.16, 0.32);
+          vec3 midc = vec3(0.08, 0.28, 0.42);
+          vec3 sunset = vec3(1.05, 0.48, 0.22);
+          vec3 sky = vec3(0.95, 0.55, 0.38);
+          vec3 col = mix(deep, midc, 0.45 + n.y * 0.2);
+          col = mix(col, sunset, fres * 0.72);
+          col = mix(col, sky, fres * 0.35);
+          vec3 sunDir = normalize(vec3(-0.55, 0.28, 0.42));
+          vec3 halfV = normalize(sunDir + viewDir);
+          float spec = pow(max(0.0, dot(n, halfV)), 64.0);
+          col += vec3(1.2, 0.85, 0.45) * spec * 1.35;
+          float spark = pow(max(0.0, sin(vUv.x * 90.0 + uTime * 1.4) * sin(vUv.y * 78.0 - uTime * 0.9)), 10.0);
+          col += vec3(1.0, 0.88, 0.62) * spark * 0.22;
+          gl_FragColor = vec4(col, 0.94);
         }
       `,
     });
@@ -276,8 +313,12 @@ export class Track {
   }
 
   #island(scene) {
-    const sand = new THREE.MeshStandardMaterial({ color: 0xe8c07a, roughness: 0.92 });
-    const grass = new THREE.MeshStandardMaterial({ color: 0x3d9a58, roughness: 0.88 });
+    const sandTex = sandMap();
+    sandTex.repeat.set(8, 8);
+    const grassTex = grassMap();
+    grassTex.repeat.set(8, 8);
+    const sand = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 0.9 });
+    const grass = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 0.86 });
     const base = new THREE.Mesh(new THREE.CylinderGeometry(168, 178, 3.2, 40), sand);
     base.position.set(this.center.x, -1.4, this.center.z);
     base.receiveShadow = true;
@@ -326,10 +367,12 @@ export class Track {
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    const asphaltTex = asphaltMap();
+    asphaltTex.repeat.set(1, 40);
     const mat = new THREE.MeshStandardMaterial({
-      color: 0x2a2d36,
-      roughness: 0.72,
-      metalness: 0.08,
+      map: asphaltTex,
+      roughness: 0.62,
+      metalness: 0.12,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
@@ -392,7 +435,7 @@ export class Track {
   #barriers(scene) {
     const colors = [0x2ee6a6, 0xff8a3a, 0x3d8bff, 0xffd23d];
     const mats = colors.map((c) => new THREE.MeshStandardMaterial({
-      color: c, roughness: 0.4, metalness: 0.15, emissive: c, emissiveIntensity: 0.07,
+      color: c, roughness: 0.4, metalness: 0.15, emissive: c, emissiveIntensity: 0.18,
     }));
     const geom = new THREE.BoxGeometry(0.42, 1.15, 2.05);
     for (let i = 0; i < this.samples.length; i += 3) {
@@ -419,7 +462,7 @@ export class Track {
   }
 
   #boostArrows(scene) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x48f0c8, transparent: true, opacity: 0.85 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x48f0c8, emissive: 0x48f0c8, emissiveIntensity: 1.4, transparent: true, opacity: 0.9 });
     const shape = new THREE.Shape();
     shape.moveTo(0, 1.1);
     shape.lineTo(-0.7, -0.7);
@@ -599,7 +642,8 @@ export class Track {
   }
 
   #rocks(scene) {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x7a7068, roughness: 0.95 });
+    const rockTex = rockMap();
+    const mat = new THREE.MeshStandardMaterial({ map: rockTex, roughness: 0.95 });
     const rockGeo = new THREE.DodecahedronGeometry(1.2, 0);
     const rng = mulberry(99);
     for (let i = 0; i < 22; i++) {
