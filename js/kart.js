@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 export const RACERS = [
   { name: "Volt", color: 0x2ee6a6, accent: 0x083830 },
@@ -26,24 +27,32 @@ const _tmp = new THREE.Vector3();
 
 export function createKartMesh(color, accent) {
   const root = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color, roughness: 0.38, metalness: 0.22, emissive: color, emissiveIntensity: 0.08,
+  const bodyMat = new THREE.MeshPhysicalMaterial({
+    color, roughness: 0.22, metalness: 0.35,
+    clearcoat: 0.85, clearcoatRoughness: 0.12,
+    envMapIntensity: 1.15, emissive: color, emissiveIntensity: 0.06,
   });
-  const dark = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.55, metalness: 0.15 });
-  const chrome = new THREE.MeshStandardMaterial({ color: 0xddd8d0, roughness: 0.25, metalness: 0.7 });
-  const visor = new THREE.MeshStandardMaterial({
-    color: 0x141428, roughness: 0.15, metalness: 0.8, emissive: 0x223344, emissiveIntensity: 0.2,
+  const dark = new THREE.MeshPhysicalMaterial({
+    color: accent, roughness: 0.28, metalness: 0.4,
+    clearcoat: 0.35, clearcoatRoughness: 0.22, envMapIntensity: 0.9,
+  });
+  const chrome = new THREE.MeshPhysicalMaterial({
+    color: 0xddd8d0, metalness: 0.95, roughness: 0.12, envMapIntensity: 1.3,
+  });
+  const visor = new THREE.MeshPhysicalMaterial({
+    color: 0x081018, roughness: 0.08, metalness: 0.9,
+    emissive: 0x336688, emissiveIntensity: 0.35, envMapIntensity: 1.4,
   });
   const tire = new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.9, metalness: 0.05 });
   const rim = new THREE.MeshStandardMaterial({ color: 0xf0c14a, roughness: 0.35, metalness: 0.55 });
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.42, 2.05), bodyMat);
+  const body = new THREE.Mesh(new RoundedBoxGeometry(1.38, 0.4, 2.08, 3, 0.12), bodyMat);
   body.position.y = 0.42;
   body.castShadow = true;
   body.receiveShadow = true;
   root.add(body);
 
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.28, 0.7), bodyMat);
+  const nose = new THREE.Mesh(new RoundedBoxGeometry(1.02, 0.26, 0.78, 2, 0.1), bodyMat);
   nose.position.set(0, 0.36, 1.18);
   nose.castShadow = true;
   root.add(nose);
@@ -65,10 +74,10 @@ export function createKartMesh(color, accent) {
   seat.position.set(0, 0.62, -0.15);
   root.add(seat);
 
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), chrome);
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.28, 16, 12), chrome);
   helmet.position.set(0, 0.95, -0.08);
   helmet.castShadow = true;
-  const glass = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.45), visor);
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), visor);
   glass.position.set(0, 0.96, 0.08);
   root.add(helmet, glass);
 
@@ -77,8 +86,8 @@ export function createKartMesh(color, accent) {
   root.add(bumper);
 
   const wheels = [];
-  const wGeom = new THREE.CylinderGeometry(0.32, 0.32, 0.28, 12);
-  const hubGeom = new THREE.CylinderGeometry(0.16, 0.16, 0.3, 10);
+  const wGeom = new THREE.CylinderGeometry(0.32, 0.32, 0.28, 20);
+  const hubGeom = new THREE.CylinderGeometry(0.16, 0.16, 0.3, 16);
   const places = [
     [-0.78, 0.32, 0.78],
     [0.78, 0.32, 0.78],
@@ -102,10 +111,19 @@ export function createKartMesh(color, accent) {
 
   const glow = new THREE.Mesh(
     new THREE.BoxGeometry(1.1, 0.08, 0.5),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.0 })
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.0, toneMapped: false })
   );
   glow.position.set(0, 0.18, -1.15);
   root.add(glow);
+
+  const lampMat = new THREE.MeshStandardMaterial({
+    color: 0xfff4d8, emissive: 0xffe6b8, emissiveIntensity: 2.2,
+  });
+  const hlL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.08), lampMat);
+  hlL.position.set(-0.38, 0.38, 1.55);
+  const hlR = hlL.clone();
+  hlR.position.x = 0.38;
+  root.add(hlL, hlR);
 
   root.userData.wheels = wheels;
   root.userData.glow = glow;
@@ -118,6 +136,11 @@ export class Kart {
     this.racer = racer;
     this.isPlayer = isPlayer;
     this.mesh = createKartMesh(racer.color, racer.accent);
+    if (isPlayer) {
+      const lamp = new THREE.PointLight(0xffe2b0, 2.4, 20, 1.7);
+      lamp.position.set(0, 0.55, 1.4);
+      this.mesh.add(lamp);
+    }
     this.position = new THREE.Vector3();
     this.heading = 0;
     this.pitch = 0;
